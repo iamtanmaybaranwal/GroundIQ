@@ -1,0 +1,285 @@
+{
+  "description": "Labelled evaluation set for LexiQuery. `expected_docs` are the documents that genuinely answer the question; `must_include` are keywords a correct answer has to contain; `out_of_scope` questions must be refused.",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What is the standard canary rollout schedule for a production release?",
+      "expected_docs": [
+        "deployment-policy"
+      ],
+      "must_include": [
+        "5%",
+        "25%"
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "How do I roll back a bad release and how fast should it be?",
+      "expected_docs": [
+        "deployment-policy"
+      ],
+      "must_include": [
+        "rollback",
+        "five minutes"
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "How quickly must a Sev1 incident be acknowledged?",
+      "expected_docs": [
+        "incident-response"
+      ],
+      "must_include": [
+        "5 minutes"
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "When do we escalate an incident to the director of engineering?",
+      "expected_docs": [
+        "incident-response"
+      ],
+      "must_include": [
+        "60 minutes"
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "What are the rate limits for the Pro tier of the public API?",
+      "expected_docs": [
+        "api-rate-limits"
+      ],
+      "must_include": [
+        "600",
+        "burst"
+      ]
+    },
+    {
+      "id": "q6",
+      "question": "Which headers does the API return when a client is rate limited?",
+      "expected_docs": [
+        "api-rate-limits"
+      ],
+      "must_include": [
+        "Retry-After"
+      ]
+    },
+    {
+      "id": "q7",
+      "question": "How long are audit logs retained?",
+      "expected_docs": [
+        "data-retention"
+      ],
+      "must_include": [
+        "seven years"
+      ]
+    },
+    {
+      "id": "q8",
+      "question": "How long do we have to complete a customer data deletion request?",
+      "expected_docs": [
+        "data-retention"
+      ],
+      "must_include": [
+        "30 days"
+      ]
+    },
+    {
+      "id": "q9",
+      "question": "How often must database credentials be rotated?",
+      "expected_docs": [
+        "security-access"
+      ],
+      "must_include": [
+        "30 days"
+      ]
+    },
+    {
+      "id": "q10",
+      "question": "What is the patching deadline for a critical vulnerability?",
+      "expected_docs": [
+        "security-access"
+      ],
+      "must_include": [
+        "7 days"
+      ]
+    },
+    {
+      "id": "q11",
+      "question": "What does the RDS-4471 error mean and how do I fix it?",
+      "expected_docs": [
+        "database-runbook"
+      ],
+      "must_include": [
+        "connection pool"
+      ]
+    },
+    {
+      "id": "q12",
+      "question": "How long does a PostgreSQL failover take and what happens to the old primary?",
+      "expected_docs": [
+        "database-runbook"
+      ],
+      "must_include": [
+        "fenced"
+      ]
+    },
+    {
+      "id": "q13",
+      "question": "Should containers set CPU limits in Kubernetes?",
+      "expected_docs": [
+        "kubernetes-standards"
+      ],
+      "must_include": [
+        "throttling"
+      ]
+    },
+    {
+      "id": "q14",
+      "question": "Why must a liveness probe not check a downstream dependency?",
+      "expected_docs": [
+        "kubernetes-standards"
+      ],
+      "must_include": [
+        "cascade"
+      ]
+    },
+    {
+      "id": "q15",
+      "question": "What compensation applies when an engineer is paged in the middle of the night?",
+      "expected_docs": [
+        "oncall-handbook"
+      ],
+      "must_include": [
+        "morning off"
+      ]
+    },
+    {
+      "id": "q16",
+      "question": "What happens when a service exhausts its error budget?",
+      "expected_docs": [
+        "observability-standards"
+      ],
+      "must_include": [
+        "pause"
+      ]
+    },
+    {
+      "id": "q17",
+      "question": "How long is a deprecated API version supported after the notice?",
+      "expected_docs": [
+        "release-versioning"
+      ],
+      "must_include": [
+        "12 months"
+      ]
+    },
+    {
+      "id": "q18",
+      "question": "Is adding a new optional response field a breaking change?",
+      "expected_docs": [
+        "release-versioning"
+      ],
+      "must_include": [
+        "not breaking"
+      ]
+    },
+    {
+      "id": "q19",
+      "question": "What is the policy for untagged cloud resources?",
+      "expected_docs": [
+        "cost-management"
+      ],
+      "must_include": [
+        "14 days"
+      ]
+    },
+    {
+      "id": "q20",
+      "question": "What do we do with a flaky test?",
+      "expected_docs": [
+        "testing-standards"
+      ],
+      "must_include": [
+        "quarantined"
+      ]
+    },
+    {
+      "id": "q21",
+      "question": "How is latency reported on dashboards and why not an average?",
+      "expected_docs": [
+        "observability-standards"
+      ],
+      "must_include": [
+        "histogram"
+      ]
+    },
+    {
+      "id": "q22",
+      "question": "Can I deploy to production on a Friday?",
+      "expected_docs": [
+        "deployment-policy"
+      ],
+      "must_include": [
+        "approval"
+      ]
+    }
+  ],
+  "out_of_scope": [
+    "What is the capital city of France?",
+    "Who won the football world cup in 1998?",
+    "What is the recipe for a Neapolitan pizza dough?",
+    "How do I fix the carburettor on a 1972 motorcycle?"
+  ],
+  "paraphrase_description": "Questions deliberately written with little lexical overlap with the source document - this is where BM25 alone degrades and dense retrieval earns its place.",
+  "paraphrase_questions": [
+    {
+      "id": "p1",
+      "question": "If a shipped change is hurting customers, what is the fastest way to undo it?",
+      "expected_docs": [
+        "deployment-policy"
+      ],
+      "must_include": []
+    },
+    {
+      "id": "p2",
+      "question": "Who do I wake up when a total outage is still not fixed after an hour?",
+      "expected_docs": [
+        "incident-response"
+      ],
+      "must_include": []
+    },
+    {
+      "id": "p3",
+      "question": "What stops one greedy workload from eating all the RAM on a shared machine?",
+      "expected_docs": [
+        "kubernetes-standards"
+      ],
+      "must_include": []
+    },
+    {
+      "id": "p4",
+      "question": "How much warning do customers get before an old endpoint disappears?",
+      "expected_docs": [
+        "release-versioning"
+      ],
+      "must_include": []
+    },
+    {
+      "id": "p5",
+      "question": "What does someone get back if their sleep was interrupted by alerts?",
+      "expected_docs": [
+        "oncall-handbook"
+      ],
+      "must_include": []
+    },
+    {
+      "id": "p6",
+      "question": "How do we make sure an unused machine is not silently burning money?",
+      "expected_docs": [
+        "cost-management"
+      ],
+      "must_include": []
+    }
+  ]
+}
