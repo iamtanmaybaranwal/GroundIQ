@@ -1,324 +1,807 @@
-# LexiQuery — Hybrid RAG Engine with Grounded Answers and a Real Eval Harness
+# GroundIQ — Grounded Knowledge Search & RAG Engine
 
-> A retrieval-augmented question answering engine for internal knowledge bases: BM25 + dense
-> retrieval fused with Reciprocal Rank Fusion, an explainable reranker, citation-backed answers,
-> and a **refusal guardrail that says "I don't know" instead of inventing policy** — with a
-> measured evaluation harness that proves every design choice.
+> **Ask questions about your company's documents — get answers backed by evidence, or get told "I don't know."**
 
-[![tests](https://img.shields.io/badge/tests-35%20passing-brightgreen)]()
-[![hit@3](https://img.shields.io/badge/hit%403-1.00-brightgreen)]()
-[![MRR](https://img.shields.io/badge/MRR-0.977-brightgreen)]()
-[![hallucination](https://img.shields.io/badge/out--of--scope%20refusal-100%25-blue)]()
+LexiQuery is a **retrieval-augmented question answering (RAG) engine** for internal knowledge bases.
+
+Think of it as **an AI search assistant for company documentation**.
+
+Instead of giving an LLM access to a collection of documents and trusting it to answer, LexiQuery first searches the knowledge base, finds the most relevant information, checks whether the evidence is strong enough, and then produces an answer with citations.
+
+If the information cannot be reliably found, **LexiQuery refuses to guess.**
+
+### In simple terms
+
+Imagine a company has thousands of documents containing:
+
+- Engineering runbooks
+- Security policies
+- HR documentation
+- Internal FAQs
+- Deployment guides
+- Database troubleshooting guides
+
+An engineer asks:
+
+> **"What does RDS-4471 mean and how do I fix it?"**
+
+LexiQuery searches the company's knowledge base, finds the relevant runbook, and answers:
+
+> **RDS-4471 means the PostgreSQL connection pool is exhausted.**
+
+It also shows **where the answer came from**.
+
+If someone instead asks:
+
+> **"What is the capital of France?"**
+
+and that information does not exist in the company's knowledge base, LexiQuery does not invent an answer.
+
+It says:
+
+> **"I don't know — I couldn't find supporting information in the knowledge base."**
+
+This makes LexiQuery focused on **grounded answers rather than confident guesses.**
 
 ---
 
-## The real-world problem
+## Why LexiQuery?
 
-Every company has the same failure: the answer *is* written down, and nobody can find it. So they
-bolt an LLM onto their docs, and hit the four problems that make most RAG demos unusable in
-production:
+Most simple RAG applications look like:
 
-| Problem | What goes wrong | How LexiQuery solves it |
-|---|---|---|
-| **Hallucination** | The model answers confidently from nothing, and someone follows an invented policy | Every claim carries a citation to a retrieved passage, and the pipeline **refuses** when retrieval confidence is low. Measured: **100% refusal on out-of-scope questions**, 100% citation validity |
-| **Vectors miss exact identifiers** | "What is RDS-4471?" returns semantically similar prose about databases, not the runbook line that defines it | BM25 runs alongside embeddings; the fused ranking finds the exact token. Measured: BM25 gets MRR **1.00** on identifier/keyword questions |
-| **Keyword search misses paraphrases** | "How do I undo a bad release?" finds nothing, because the doc says "rollback procedure" | Dense retrieval covers the paraphrase. Measured on a deliberately paraphrased set: hybrid lifts hit@3 from **0.67 (BM25) to 0.83** |
-| **Chunking destroys context** | A passage split mid-sentence, with no heading, is unciteable and often unusable | Structure-aware chunking down the heading hierarchy, with sentence overlap; every chunk carries its heading path |
-| **"Is it any good?"** | Teams ship RAG with no metrics at all | A labelled eval set (22 keyword + 6 paraphrase + 4 out-of-scope questions), retrieval metrics, citation validity, and an **ablation harness** comparing BM25 / vectors / hybrid |
+```text
+Documents
+    ↓
+Embeddings
+    ↓
+Vector Database
+    ↓
+LLM
+    ↓
+Answer
+````
 
-**The whole system runs offline with no API key.** Hosted embeddings, rerankers and LLMs
-(Anthropic, OpenAI-compatible) are drop-in providers behind the same interfaces.
+That approach works for demos, but real knowledge systems have harder problems.
+
+LexiQuery addresses them as separate, measurable engineering problems:
+
+| Problem                                                | LexiQuery's approach                        |
+| ------------------------------------------------------ | ------------------------------------------- |
+| Exact identifiers are difficult for semantic search    | **BM25 lexical retrieval**                  |
+| Keywords fail on paraphrased questions                 | **Dense retrieval**                         |
+| Different retrieval methods produce different rankings | **Reciprocal Rank Fusion (RRF)**            |
+| Some retrieved passages are only loosely relevant      | **Explainable reranking**                   |
+| LLMs may answer without sufficient evidence            | **Grounding guardrail**                     |
+| Answers need to be verifiable                          | **Citation-backed responses**               |
+| Nobody knows whether a RAG system actually works       | **Automated evaluation + ablation testing** |
+| Out-of-scope questions can cause hallucinations        | **Explicit refusal mechanism**              |
 
 ---
 
-## Architecture
+# Core Pipeline
 
+LexiQuery treats RAG as an **engineering pipeline**, not simply a prompt.
+
+```text
+                    ┌──────────────────┐
+                    │   Documents      │
+                    │   Markdown/Docs  │
+                    └────────┬─────────┘
+                             │
+                             ▼
+                  ┌─────────────────────┐
+                  │ Structure-Aware     │
+                  │ Chunking            │
+                  └─────────┬───────────┘
+                            │
+                 ┌──────────┴──────────┐
+                 ▼                     ▼
+          ┌─────────────┐       ┌─────────────┐
+          │    BM25     │       │    Dense    │
+          │   Search    │       │  Retrieval  │
+          └──────┬──────┘       └──────┬──────┘
+                 │                     │
+                 └──────────┬──────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │ Reciprocal Rank     │
+                 │ Fusion (RRF)        │
+                 └─────────┬───────────┘
+                           ▼
+                 ┌─────────────────────┐
+                 │ Explainable         │
+                 │ Reranker             │
+                 └─────────┬───────────┘
+                           ▼
+                 ┌─────────────────────┐
+                 │ Grounding Guardrail │
+                 └─────────┬───────────┘
+                           │
+                 ┌─────────┴─────────┐
+                 ▼                   ▼
+          Sufficient Evidence    Weak Evidence
+                 │                   │
+                 ▼                   ▼
+          Answer + Citations     "I don't know"
 ```
-  corpus/*.md
-      │
-      ▼
-┌───────────────────────┐   sections → paragraphs → sentences, with overlap;
-│ structure-aware       │   every chunk keeps its heading path so it can stand
-│ chunking              │   alone in a prompt and be cited
-└──────────┬────────────┘
-           ▼
-   ┌───────────────┬─────────────────────┐
-   ▼               ▼                     │
-┌──────────┐  ┌──────────────────┐       │  indexing
-│  BM25    │  │ embeddings       │       │
-│ (from    │  │ local: TF-IDF+SVD│       │
-│ scratch) │  │ or hosted API    │       │
-└────┬─────┘  └────────┬─────────┘       │
-     │ ranks           │ ranks           │
-     └────────┬────────┘                 │
-              ▼                          │
-   ┌────────────────────────┐            │  retrieval
-   │ Reciprocal Rank Fusion │  RRF(d) = Σ 1/(k + rank_i(d)),  k=60
-   │ (scale-free)           │  fuses *ranks*, so incomparable score
-   └───────────┬────────────┘  scales never need normalising
-               ▼
-   ┌────────────────────────┐   coverage · proximity · phrase · heading · density
-   │ feature reranker       │   → an explainable 0-1 score per candidate
-   │ (or hosted x-encoder)  │
-   └───────────┬────────────┘
-               ▼
-   ┌────────────────────────┐   IDF-weighted coverage of the query's information.
-   │ GROUNDING GUARDRAIL    │   Below threshold → refuse, with no citations.
-   └───────────┬────────────┘
-               ▼
-   ┌────────────────────────┐   extractive (default, offline, deterministic)
-   │ answer generation      │   │ anthropic (claude-opus-5) │ openai-compatible
-   └───────────┬────────────┘
-               ▼
-     answer + citations + per-source ranking signals + confidence + latency
-```
-
-### Design decisions, and the numbers behind them
-
-| Decision | Why | Evidence |
-|---|---|---|
-| **Hybrid, not vectors-only** | Dense retrieval blurs rare identifiers | vector-only MRR 0.943 vs hybrid 0.977 on the keyword set |
-| **Hybrid, not BM25-only** | Lexical search dies on paraphrase | On the paraphrase set: BM25 hit@3 0.667 → hybrid **0.833** |
-| **RRF over score normalisation** | BM25 scores are unbounded, cosine is [-1,1]; normalising is fragile and corpus-dependent | `test_rrf_is_scale_free` |
-| **IDF-weighted grounding signal** | Plain term overlap treats "the" like "RDS-4471", so off-topic questions look grounded | Out-of-scope questions score **0.000** coverage vs 0.26–1.00 for in-scope |
-| **Refuse instead of guessing** | A wrong internal policy answer is worse than no answer | 100% refusal on 4 out-of-scope questions, 0% false refusals on 22 in-scope |
-| **Extractive answerer as default** | Grounded by construction, deterministic, so the eval harness measures *retrieval*, not model variance | citation validity 1.0 |
-| **Local embeddings as default** | The project must be runnable and reproducible by anyone, with no key and no GPU | `pip install -r requirements.txt && pytest` |
-
-> **An honest result:** on the keyword-style eval set, BM25 alone scores a perfect MRR of 1.00 —
-> slightly *above* hybrid's 0.977. Small, well-written corpora with keyword-ish questions are
-> BM25's best case. That is exactly why the paraphrase set exists: it isolates the case hybrid is
-> for, and there hybrid wins on both hit@3 and nDCG. Reporting only the flattering number would
-> have hidden the real trade-off.
 
 ---
 
-## Tech stack
+# Key Features
 
-| Layer | Technology |
-|---|---|
-| Language | Python 3.11+ |
-| Retrieval | BM25 (implemented from the ranking function), exact cosine over a NumPy matrix, RRF fusion |
-| Embeddings | scikit-learn TF-IDF + TruncatedSVD (LSA), L2-normalised — or a hosted provider |
-| Reranking | Hand-built feature reranker (coverage, min-span proximity, phrase, heading, density) |
-| Generation | Extractive (default) · Anthropic `claude-opus-5` via the official SDK · any OpenAI-compatible endpoint |
-| Serving | FastAPI + uvicorn, API-key auth, Pydantic schemas |
-| Persistence | JSON chunks + `.npy` vectors + joblib embedder — start a service without re-indexing |
-| Evaluation | Labelled question set, IR metrics (hit@k, recall@k, MRR, nDCG), citation validity, ablation harness |
-| Testing | pytest — 35 tests including **quality gates that fail CI on a retrieval regression** |
+## 🔎 Hybrid Retrieval
+
+LexiQuery combines two fundamentally different search strategies.
+
+### BM25
+
+BM25 handles **exact words, identifiers, and technical terminology**.
+
+For example:
+
+```text
+RDS-4471
+PostgreSQL
+connection pool
+Kubernetes
+```
+
+This is particularly useful when the user asks about a specific error code, configuration key, service name, or technical identifier.
+
+### Dense Retrieval
+
+Dense retrieval handles **meaning and paraphrases**.
+
+For example:
+
+```text
+"How do I undo a bad release?"
+```
+
+can retrieve a document containing:
+
+```text
+"Production deployment rollback procedure"
+```
+
+even though the exact words are different.
 
 ---
 
-## Project layout
+# Reciprocal Rank Fusion
 
+BM25 and dense retrieval produce different rankings.
+
+LexiQuery combines those rankings using **Reciprocal Rank Fusion (RRF)**.
+
+```text
+BM25 results
+      +
+Dense results
+      ↓
+    RRF
+      ↓
+Combined ranking
 ```
-01-lexiquery/
+
+RRF works with rankings rather than raw scores, avoiding fragile score normalization between retrieval systems.
+
+The implementation uses:
+
+```text
+RRF(d) = Σ 1 / (k + rank_i(d))
+```
+
+with `k = 60`.
+
+---
+
+# Explainable Reranking
+
+After retrieval and fusion, LexiQuery reranks candidate passages using interpretable signals such as:
+
+* Query term coverage
+* IDF-weighted coverage
+* Term proximity
+* Phrase matching
+* Heading relevance
+* Content density
+
+Instead of producing an unexplained black-box score, the system exposes the ranking signals used for each candidate.
+
+This makes retrieval behavior easier to inspect and debug.
+
+---
+
+# Grounding Guardrail
+
+This is one of the most important parts of LexiQuery.
+
+Before generating an answer, LexiQuery checks whether the retrieved evidence provides enough support for the question.
+
+```text
+Question
+   ↓
+Retrieved evidence
+   ↓
+Grounding score
+   ↓
+ ┌───────────────┬────────────────┐
+ │ Strong enough │ Too weak       │
+ ▼               ▼
+Answer          Refuse
+ + citations    to answer
+```
+
+If the evidence falls below the configured threshold:
+
+```text
+I could not find this in the knowledge base.
+Answering without a supporting source would risk inventing policy.
+```
+
+The goal is simple:
+
+> **A missing answer is better than a fabricated internal policy.**
+
+On the included out-of-scope evaluation set, LexiQuery achieved a **100% refusal rate**.
+
+---
+
+# Citation-Backed Answers
+
+Every generated answer can be traced back to the retrieved document passages.
+
+Example:
+
+```text
+Q:
+What does RDS-4471 mean?
+
+A:
+RDS-4471 means the PostgreSQL connection pool is exhausted.
+
+Source:
+database-runbook
+→ PostgreSQL Runbook
+→ Common errors
+
+Confidence: 0.6786
+```
+
+This allows users to verify the answer instead of blindly trusting the model.
+
+---
+
+# Evaluation
+
+LexiQuery includes a dedicated **evaluation harness** instead of simply claiming that the RAG system is accurate.
+
+The evaluation set contains:
+
+* 22 keyword-style questions
+* 6 paraphrased questions
+* 4 out-of-scope questions
+
+It measures:
+
+* Hit@K
+* Recall@K
+* Precision@K
+* Mean Reciprocal Rank (MRR)
+* nDCG
+* Citation validity
+* Out-of-scope refusal rate
+
+### Current results
+
+| Metric               |     Result |
+| -------------------- | ---------: |
+| Hit@1                | **95.45%** |
+| Hit@3                |   **100%** |
+| Recall@5             |   **100%** |
+| MRR                  | **97.73%** |
+| nDCG@5               | **98.32%** |
+| Citation validity    |   **100%** |
+| Out-of-scope refusal |   **100%** |
+
+These results are from the included labelled evaluation set.
+
+---
+
+# Retrieval Ablation
+
+LexiQuery also measures whether each component actually improves the system.
+
+### Keyword-style questions
+
+| Strategy        |     Hit@3 |       MRR |
+| --------------- | --------: | --------: |
+| BM25 only       | **1.000** | **1.000** |
+| Vector only     |     0.955 |     0.943 |
+| Hybrid + rerank | **1.000** |     0.977 |
+
+### Paraphrased questions
+
+| Strategy        |     Hit@3 |       MRR |
+| --------------- | --------: | --------: |
+| BM25 only       |     0.667 |     0.472 |
+| Vector only     |     0.500 |     0.507 |
+| Hybrid + rerank | **0.833** | **0.514** |
+
+An important result is that **BM25 actually performs better on the keyword-style dataset**.
+
+LexiQuery does not hide this result.
+
+Instead, the paraphrase evaluation demonstrates the specific situation where hybrid retrieval provides value.
+
+This makes the evaluation an actual engineering experiment rather than a collection of flattering benchmark numbers.
+
+---
+
+# Architecture
+
+```text
+                         ┌─────────────────┐
+                         │     Corpus      │
+                         │    Markdown     │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                    ┌────────────────────────┐
+                    │ Structure-Aware        │
+                    │ Chunking               │
+                    │                        │
+                    │ Sections → paragraphs  │
+                    │ → sentences + overlap │
+                    └───────────┬────────────┘
+                                │
+                  ┌─────────────┴──────────────┐
+                  │                            │
+                  ▼                            ▼
+          ┌──────────────┐              ┌──────────────┐
+          │     BM25     │              │  Embeddings  │
+          │              │              │              │
+          │ Implemented  │              │ TF-IDF + SVD │
+          │ from scratch │              │ or hosted    │
+          └──────┬───────┘              └──────┬───────┘
+                 │                             │
+                 └──────────────┬──────────────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ Reciprocal Rank Fusion │
+                    └───────────┬────────────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ Explainable Reranker   │
+                    │                        │
+                    │ coverage               │
+                    │ proximity              │
+                    │ phrase                 │
+                    │ heading                │
+                    │ density                │
+                    └───────────┬────────────┘
+                                ▼
+                    ┌────────────────────────┐
+                    │ Grounding Guardrail    │
+                    └───────────┬────────────┘
+                                │
+                     ┌──────────┴──────────┐
+                     ▼                     ▼
+              ┌─────────────┐       ┌────────────┐
+              │   Answer    │       │  Refusal   │
+              │ + citations │       │ "I don't  │
+              │ + confidence│       │   know"   │
+              └─────────────┘       └────────────┘
+```
+
+---
+
+# Design Decisions
+
+## Why Hybrid Retrieval?
+
+BM25 is strong for exact technical terms and identifiers.
+
+Dense retrieval is stronger for semantic similarity and paraphrases.
+
+Using both makes the system robust to different types of questions.
+
+---
+
+## Why RRF?
+
+BM25 and vector similarity produce scores on completely different scales.
+
+Rather than trying to normalize those scores, LexiQuery combines their **rank positions** using Reciprocal Rank Fusion.
+
+---
+
+## Why Structure-Aware Chunking?
+
+Naively splitting documents can separate:
+
+```text
+Heading
++
+Important explanation
+```
+
+from each other.
+
+LexiQuery preserves the document's heading hierarchy and uses sentence overlap so that retrieved chunks retain enough context to be useful and citeable.
+
+---
+
+## Why Refuse?
+
+In an internal knowledge system, an incorrect answer can be worse than no answer.
+
+For example:
+
+```text
+"What is our production data retention policy?"
+```
+
+Inventing a policy could cause a real operational or compliance problem.
+
+LexiQuery therefore treats **insufficient evidence as a reason not to answer**.
+
+---
+
+## Why an Extractive Answerer?
+
+The default answerer is extractive and deterministic.
+
+This makes the system:
+
+* Offline
+* Reproducible
+* Fast
+* Easy to evaluate
+
+It also allows the evaluation harness to measure retrieval quality without introducing additional variability from an LLM.
+
+Hosted LLM providers can be enabled when desired.
+
+---
+
+# Tech Stack
+
+| Layer             | Technology                                  |
+| ----------------- | ------------------------------------------- |
+| Language          | Python 3.11+                                |
+| API               | FastAPI + Uvicorn                           |
+| Lexical Retrieval | BM25 implemented from scratch               |
+| Dense Retrieval   | TF-IDF + TruncatedSVD (LSA)                 |
+| Vector Search     | NumPy cosine similarity                     |
+| Rank Fusion       | Reciprocal Rank Fusion                      |
+| Reranking         | Explainable feature-based reranker          |
+| Generation        | Extractive / Anthropic / OpenAI-compatible  |
+| Validation        | Pydantic                                    |
+| Persistence       | JSON + NumPy + Joblib                       |
+| Evaluation        | Hit@K, Recall, MRR, nDCG, citation validity |
+| Testing           | pytest                                      |
+| Authentication    | API-key authentication                      |
+
+---
+
+# Project Structure
+
+```text
+lexiquery/
 ├── lexiquery/
-│   ├── text.py                  # tokenisation, stemming, sentence splitting
-│   ├── chunking.py              # heading-aware chunking with overlap
+│   ├── text.py
+│   ├── chunking.py
+│   │
 │   ├── index/
-│   │   ├── bm25.py              # BM25 from scratch (IDF, saturation, length norm)
-│   │   ├── embeddings.py        # local LSA embedder + hosted provider
-│   │   └── vector.py            # exact cosine search
+│   │   ├── bm25.py
+│   │   ├── embeddings.py
+│   │   └── vector.py
+│   │
 │   ├── retrieval/
-│   │   ├── hybrid.py            # Reciprocal Rank Fusion
-│   │   └── rerank.py            # explainable feature reranker (+ hosted option)
-│   ├── generation/answerers.py  # extractive / Anthropic / OpenAI-compatible
-│   ├── pipeline.py              # the RAG engine + grounding guardrail + persistence
+│   │   ├── hybrid.py
+│   │   └── rerank.py
+│   │
+│   ├── generation/
+│   │   └── answerers.py
+│   │
 │   ├── evaluation/
-│   │   ├── metrics.py           # hit@k, recall@k, precision@k, MRR, nDCG, citation validity
-│   │   └── harness.py           # eval runner + retrieval-strategy ablation
-│   ├── api.py                   # FastAPI service
-│   └── cli.py                   # ask / search / evaluate / ablation / index
-├── corpus/                      # 11-document engineering knowledge base
-├── eval/questions.json          # 22 labelled + 6 paraphrase + 4 out-of-scope questions
-├── tests/                       # 35 tests
+│   │   ├── metrics.py
+│   │   └── harness.py
+│   │
+│   ├── pipeline.py
+│   ├── api.py
+│   └── cli.py
+│
+├── corpus/
+│   └── engineering knowledge base
+│
+├── eval/
+│   └── questions.json
+│
+├── tests/
+│   └── 35 tests
+│
 └── requirements.txt
 ```
 
 ---
 
-## Quickstart
+# Getting Started
+
+## 1. Clone the repository
 
 ```bash
-cd ai-ml/01-lexiquery
+git clone https://github.com/iamtanmaybaranwal/LexiQuery.git
+cd LexiQuery
+```
 
+## 2. Create a virtual environment
+
+```bash
 python -m venv .venv
-# Windows:  .venv\Scripts\activate     macOS/Linux:  source .venv/bin/activate
+```
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+### macOS/Linux
+
+```bash
+source .venv/bin/activate
+```
+
+## 3. Install dependencies
+
+```bash
 pip install -r requirements.txt
-cp .env.example .env          # optional: nothing in it is required to run
 ```
 
-### Ask a question
+No API key is required for the default offline configuration.
+
+---
+
+# Ask a Question
 
 ```bash
-python -m lexiquery.cli ask "what does RDS-4471 mean and how do I fix it"
+python -m lexiquery.cli ask \
+  "what does RDS-4471 mean and how do I fix it"
 ```
 
-```
+Example:
+
+```text
 Q: what does RDS-4471 mean and how do I fix it
-------------------------------------------------------------------------------
-Error `RDS-4471` means the connection pool is exhausted. [1]
-------------------------------------------------------------------------------
+
+Error RDS-4471 means the connection pool is exhausted.
+
 sources:
-  [1] database-runbook :: PostgreSQL Runbook > Common errors
-confidence 0.6786 | refused False | 4.55 ms | provider extractive
+  [1] database-runbook
+      PostgreSQL Runbook > Common errors
+
+confidence 0.6786
+refused False
+provider extractive
 ```
 
-### The guardrail in action
+---
+
+# Test the Refusal Guardrail
 
 ```bash
-python -m lexiquery.cli ask "what is the capital of France"
+python -m lexiquery.cli ask \
+  "what is the capital of France"
 ```
 
-```
-I could not find this in the knowledge base. Try rephrasing, or check with the owning team -
+Example:
+
+```text
+I could not find this in the knowledge base.
+
+Try rephrasing, or check with the owning team -
 answering without a supporting source would risk inventing policy.
-confidence 0.1592 | refused True | 3.52 ms | provider extractive
+
+confidence 0.1592
+refused True
 ```
 
-### Measure it
+---
+
+# Run the Evaluation
 
 ```bash
 python -m lexiquery.cli evaluate
 ```
 
-```
-Retrieval and answer quality on 22 labelled questions
-------------------------------------------------------------------------------
-  hit@1                        0.9545
-  hit@3                        1.0
-  recall@5                     1.0
-  precision@1                  0.9545
-  mrr                          0.9773
-  ndcg@5                       0.9832
-  citation_validity            1.0
-  keyword_recall               0.9318
-  answered                     22
-  out_of_scope_refusal_rate    1.0
-```
+---
 
-### Ablation — does each stage earn its place?
+# Run the Ablation Study
 
 ```bash
 python -m lexiquery.cli ablation
 ```
 
-| Strategy | hit@1 | hit@3 | recall@5 | MRR | nDCG@5 |
-|---|---|---|---|---|---|
-| **Keyword-style questions (22)** | | | | | |
-| bm25_only | 1.000 | 1.000 | 1.000 | **1.000** | 1.000 |
-| vector_only | 0.909 | 0.955 | 1.000 | 0.943 | 0.957 |
-| hybrid + rerank | 0.955 | 1.000 | 1.000 | 0.977 | 0.983 |
-| **Paraphrased questions (6)** | | | | | |
-| bm25_only | 0.167 | 0.667 | 0.667 | 0.472 | 0.604 |
-| vector_only | 0.333 | 0.500 | 0.500 | 0.507 | 0.510 |
-| hybrid + rerank | 0.167 | **0.833** | 0.833 | **0.514** | **0.637** |
+This compares:
 
-### Inspect the ranking signals
-
-```bash
-python -m lexiquery.cli search "postgres failover"
+```text
+BM25 only
+Vector only
+Hybrid + reranking
 ```
 
-```
-chunk                           fused     bm25   vector    rerank
-database-runbook#1             0.6912   11.284    0.831     0.712
-database-runbook#0             0.4013    6.117    0.604     0.402
-...
-```
+and reports retrieval metrics for each strategy.
 
-### Run the service
+---
+
+# Run the API
 
 ```bash
 uvicorn lexiquery.api:app --factory --port 8000
-# docs: http://127.0.0.1:8000/docs
 ```
 
-```bash
-KEY="change-me-lexiquery-api-key"
+API documentation:
 
-curl -s -XPOST localhost:8000/v1/ask -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"question":"How long are audit logs retained?"}'
-
-curl -s -XPOST localhost:8000/v1/search -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"query":"rate limit headers","top_k":3}'
-
-# add documents at runtime (the index re-fits)
-curl -s -XPOST localhost:8000/v1/documents -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"documents":[{"id":"laptops","title":"IT","text":"# IT\n## Laptops\nLaptops are replaced every three years."}]}'
-
-curl -s -XPOST "localhost:8000/v1/evaluate" -H "X-API-Key: $KEY"
-```
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /v1/ask` | Grounded answer with citations, sources, confidence and latency |
-| `POST /v1/search` | Retrieved passages with every ranking signal exposed |
-| `POST /v1/documents` · `GET /v1/documents` | Ingest / list corpus documents |
-| `POST /v1/evaluate` | Run the labelled eval set and return the metric summary |
-| `GET /health` | Public liveness + index statistics |
-
-### Switching to hosted providers
-
-Everything is one config change (keys live in `.env`, never in code):
-
-```ini
-LEXIQUERY_ANSWERER=anthropic          # Claude via the official SDK (claude-opus-5)
-ANTHROPIC_API_KEY=                    # ==> your key here
-
-LEXIQUERY_EMBEDDING_PROVIDER=openai   # hosted embeddings
-LEXIQUERY_OPENAI_API_KEY=             # ==> your key here
-
-LEXIQUERY_RERANKER=cross-encoder      # hosted reranker
-LEXIQUERY_RERANK_API_KEY=             # ==> your key here
+```text
+http://127.0.0.1:8000/docs
 ```
 
 ---
 
-## Testing
+# API
 
-```bash
-python -m pytest -q          # 35 tests, ~3s
-```
-
-* **Text & chunking** — tokenisation/stemming/stop-words; heading hierarchy; chunks carry their
-  heading, respect the token budget and overlap so a boundary answer stays retrievable.
-* **BM25** — rare-term ranking, IDF ordering, and a test that term-frequency **saturates**
-  (10× the term must not give 10× the score — that is the `k1` term doing its job).
-* **Vectors & fusion** — exact cosine neighbours; RRF rewards documents both retrievers found,
-  prefers consistent ranks, and is scale-free.
-* **Reranker** — prefers tight term proximity over a long passage that merely mentions the terms;
-  signals are individually asserted so the score stays explainable.
-* **Metrics** — hit@k, recall@k, precision@k, MRR, nDCG and citation validity verified against
-  hand-computed values.
-* **Pipeline** — grounded, cited answers; exact-identifier lookup (the lexical path); paraphrase
-  retrieval (the dense path); **out-of-scope refusal**; index save/reload; runtime ingestion.
-* **Quality gates** — `test_retrieval_quality_meets_the_bar` fails CI if hit@1 < 0.80, hit@3 <
-  0.90, MRR < 0.85, citation validity < 1.0, or any out-of-scope question is answered.
-* **API** — auth, ask/search/list/validation behaviour.
+| Method | Endpoint        | Purpose                                       |
+| ------ | --------------- | --------------------------------------------- |
+| POST   | `/v1/ask`       | Grounded answer with citations and confidence |
+| POST   | `/v1/search`    | Search and expose ranking signals             |
+| POST   | `/v1/documents` | Add documents to the corpus                   |
+| GET    | `/v1/documents` | List documents                                |
+| POST   | `/v1/evaluate`  | Run the evaluation set                        |
+| GET    | `/health`       | Health and index statistics                   |
 
 ---
 
-## What this project demonstrates
+# Example API Request
 
-* RAG as an engineering discipline rather than a prompt: chunking, hybrid retrieval, fusion,
-  reranking, grounding and refusal are separate, testable stages.
-* Information retrieval from first principles — BM25, RRF and the IR metric suite implemented and
-  verified, not imported.
-* Hallucination control that can be *measured*, and a guardrail signal (IDF-weighted coverage)
-  designed specifically because the naive one failed on real out-of-scope questions.
-* Honest evaluation, including publishing the ablation where the simplest baseline wins.
-* Provider abstraction so an offline default and a hosted stack share one code path.
+```bash
+curl -X POST localhost:8000/v1/ask \
+  -H "X-API-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "How long are audit logs retained?"
+  }'
+```
 
-## Roadmap
+A response contains:
 
-- [ ] Approximate nearest neighbours (HNSW/FAISS) once the corpus outgrows an exact matrix
-- [ ] Query rewriting and multi-hop retrieval for compound questions
-- [ ] Sentence-transformer embeddings as a third local provider
-- [ ] Per-tenant corpora with document-level ACLs enforced at retrieval time
-- [ ] Answer-level LLM-as-judge scoring alongside the deterministic metrics
+```text
+answer
+citations
+sources
+confidence
+latency
+refused
+```
 
-## License
+---
+
+# Hosted Providers
+
+The architecture uses provider interfaces, so hosted services can replace the local components without changing the overall pipeline.
+
+Supported options include:
+
+* Anthropic for answer generation
+* OpenAI-compatible embedding providers
+* Hosted cross-encoder reranking
+
+The offline configuration remains the default so the project can be reproduced without API keys.
+
+---
+
+# Testing
+
+Run the complete test suite:
+
+```bash
+python -m pytest -q
+```
+
+LexiQuery currently contains **35 tests** covering:
+
+* Text processing
+* Structure-aware chunking
+* BM25 ranking
+* Term-frequency saturation
+* Vector search
+* RRF fusion
+* Reranking
+* Retrieval metrics
+* Citation validity
+* Grounding
+* Out-of-scope refusal
+* Runtime document ingestion
+* Index persistence
+* API authentication
+* API behavior
+
+The project also contains **quality gates** that fail CI when retrieval quality falls below the configured thresholds.
+
+---
+
+# What This Project Demonstrates
+
+LexiQuery was designed to demonstrate that building a useful RAG system involves much more than connecting an LLM to a vector database.
+
+### Information Retrieval
+
+* BM25 from first principles
+* Dense retrieval
+* Reciprocal Rank Fusion
+* Reranking
+* IR evaluation metrics
+
+### AI Engineering
+
+* RAG architecture
+* Grounded generation
+* Hallucination mitigation
+* Provider abstraction
+* Citation-backed answers
+
+### Backend Engineering
+
+* FastAPI service
+* API authentication
+* Runtime document ingestion
+* Persistence
+* Configurable providers
+
+### Software Engineering
+
+* Modular architecture
+* Deterministic testing
+* Automated quality gates
+* Ablation experiments
+* Reproducible evaluation
+
+---
+
+# Honest Evaluation
+
+One of the goals of LexiQuery is to make RAG evaluation transparent.
+
+The included experiments show that:
+
+* BM25 is extremely strong for keyword-heavy questions.
+* Dense retrieval helps with semantic variation.
+* Hybrid retrieval improves paraphrased-question retrieval.
+* Reranking provides an additional explainable ranking stage.
+* A grounding signal can be used to reject unsupported questions.
+* Evaluation should expose weaknesses instead of reporting only the best-looking metric.
+
+The system is therefore designed around a simple principle:
+
+> **Measure every important component instead of assuming that a more complicated pipeline is automatically better.**
+
+---
+
+# Roadmap
+
+* [ ] Approximate nearest-neighbor search using HNSW / FAISS
+* [ ] Query rewriting
+* [ ] Multi-hop retrieval
+* [ ] Sentence-transformer embeddings
+* [ ] Per-tenant document collections
+* [ ] Document-level access control
+* [ ] Answer-level LLM-as-judge evaluation
+* [ ] Larger-scale retrieval benchmarks
+
+---
+
+# License
 
 MIT
