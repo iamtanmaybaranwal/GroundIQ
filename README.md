@@ -2,13 +2,13 @@
 
 > **Ask questions about your company's documents — get answers backed by evidence, or get told "I don't know."**
 
-LexiQuery is a **retrieval-augmented question answering (RAG) engine** for internal knowledge bases.
+GroundIQ is a **retrieval-augmented question answering (RAG) engine** for internal knowledge bases.
 
 Think of it as **an AI search assistant for company documentation**.
 
-Instead of giving an LLM access to a collection of documents and trusting it to answer, LexiQuery first searches the knowledge base, finds the most relevant information, checks whether the evidence is strong enough, and then produces an answer with citations.
+Instead of giving an LLM access to a collection of documents and trusting it to answer, GroundIQ first searches the knowledge base, finds the most relevant information, checks whether the evidence is strong enough, and then produces an answer with citations.
 
-If the information cannot be reliably found, **LexiQuery refuses to guess.**
+If the information cannot be reliably found, **GroundIQ refuses to guess.**
 
 ### In simple terms
 
@@ -25,7 +25,7 @@ An engineer asks:
 
 > **"What does RDS-4471 mean and how do I fix it?"**
 
-LexiQuery searches the company's knowledge base, finds the relevant runbook, and answers:
+GroundIQ searches the company's knowledge base, finds the relevant runbook, and answers:
 
 > **RDS-4471 means the PostgreSQL connection pool is exhausted.**
 
@@ -35,17 +35,17 @@ If someone instead asks:
 
 > **"What is the capital of France?"**
 
-and that information does not exist in the company's knowledge base, LexiQuery does not invent an answer.
+and that information does not exist in the company's knowledge base, GroundIQ does not invent an answer.
 
 It says:
 
 > **"I don't know — I couldn't find supporting information in the knowledge base."**
 
-This makes LexiQuery focused on **grounded answers rather than confident guesses.**
+This makes GroundIQ focused on **grounded answers rather than confident guesses.**
 
 ---
 
-## Why LexiQuery?
+# Why GroundIQ?
 
 Most simple RAG applications look like:
 
@@ -63,9 +63,9 @@ Answer
 
 That approach works for demos, but real knowledge systems have harder problems.
 
-LexiQuery addresses them as separate, measurable engineering problems:
+GroundIQ addresses them as separate, measurable engineering problems:
 
-| Problem                                                | LexiQuery's approach                        |
+| Problem                                                | GroundIQ's approach                         |
 | ------------------------------------------------------ | ------------------------------------------- |
 | Exact identifiers are difficult for semantic search    | **BM25 lexical retrieval**                  |
 | Keywords fail on paraphrased questions                 | **Dense retrieval**                         |
@@ -80,7 +80,7 @@ LexiQuery addresses them as separate, measurable engineering problems:
 
 # Core Pipeline
 
-LexiQuery treats RAG as an **engineering pipeline**, not simply a prompt.
+GroundIQ treats RAG as an **engineering pipeline**, not simply a prompt.
 
 ```text
                     ┌──────────────────┐
@@ -94,35 +94,35 @@ LexiQuery treats RAG as an **engineering pipeline**, not simply a prompt.
                   │ Chunking            │
                   └─────────┬───────────┘
                             │
-                 ┌──────────┴──────────┐
-                 ▼                     ▼
-          ┌─────────────┐       ┌─────────────┐
-          │    BM25     │       │    Dense    │
-          │   Search    │       │  Retrieval  │
-          └──────┬──────┘       └──────┬──────┘
-                 │                     │
-                 └──────────┬──────────┘
-                            ▼
-                 ┌─────────────────────┐
-                 │ Reciprocal Rank     │
-                 │ Fusion (RRF)        │
-                 └─────────┬───────────┘
-                           ▼
-                 ┌─────────────────────┐
-                 │ Explainable         │
-                 │ Reranker             │
-                 └─────────┬───────────┘
-                           ▼
-                 ┌─────────────────────┐
-                 │ Grounding Guardrail │
-                 └─────────┬───────────┘
-                           │
-                 ┌─────────┴─────────┐
-                 ▼                   ▼
-          Sufficient Evidence    Weak Evidence
-                 │                   │
-                 ▼                   ▼
-          Answer + Citations     "I don't know"
+                   ┌────────┴──────────┐
+                   ▼                   ▼
+            ┌─────────────┐     ┌─────────────┐
+            │    BM25     │     │    Dense    │
+            │   Search    │     │  Retrieval  │
+            └──────┬──────┘     └──────┬──────┘
+                   │                   │
+                   └─────────┬─────────┘
+                             ▼
+                   ┌─────────────────────┐
+                   │ Reciprocal Rank     │
+                   │ Fusion (RRF)        │
+                   └─────────┬───────────┘
+                             ▼
+                   ┌─────────────────────┐
+                   │ Explainable         │
+                   │ Reranker            │
+                   └─────────┬───────────┘
+                             ▼
+                   ┌─────────────────────┐
+                   │ Grounding Guardrail │
+                   └─────────┬───────────┘
+                             │
+                   ┌─────────┴─────────┐
+                   ▼                   ▼
+            Sufficient Evidence    Weak Evidence
+                   │                   │
+                   ▼                   ▼
+            Answer + Citations     "I don't know"
 ```
 
 ---
@@ -131,7 +131,7 @@ LexiQuery treats RAG as an **engineering pipeline**, not simply a prompt.
 
 ## 🔎 Hybrid Retrieval
 
-LexiQuery combines two fundamentally different search strategies.
+GroundIQ combines two fundamentally different search strategies.
 
 ### BM25
 
@@ -172,7 +172,7 @@ even though the exact words are different.
 
 BM25 and dense retrieval produce different rankings.
 
-LexiQuery combines those rankings using **Reciprocal Rank Fusion (RRF)**.
+GroundIQ combines those rankings using **Reciprocal Rank Fusion (RRF)**.
 
 ```text
 BM25 results
@@ -198,7 +198,7 @@ with `k = 60`.
 
 # Explainable Reranking
 
-After retrieval and fusion, LexiQuery reranks candidate passages using interpretable signals such as:
+After retrieval and fusion, GroundIQ reranks candidate passages using interpretable signals such as:
 
 * Query term coverage
 * IDF-weighted coverage
@@ -215,9 +215,9 @@ This makes retrieval behavior easier to inspect and debug.
 
 # Grounding Guardrail
 
-This is one of the most important parts of LexiQuery.
+This is one of the most important parts of GroundIQ.
 
-Before generating an answer, LexiQuery checks whether the retrieved evidence provides enough support for the question.
+Before generating an answer, GroundIQ checks whether the retrieved evidence provides enough support for the question.
 
 ```text
 Question
@@ -230,7 +230,7 @@ Grounding score
  │ Strong enough │ Too weak       │
  ▼               ▼
 Answer          Refuse
- + citations    to answer
++ citations    to answer
 ```
 
 If the evidence falls below the configured threshold:
@@ -244,7 +244,7 @@ The goal is simple:
 
 > **A missing answer is better than a fabricated internal policy.**
 
-On the included out-of-scope evaluation set, LexiQuery achieved a **100% refusal rate**.
+On the included out-of-scope evaluation set, GroundIQ achieved a **100% refusal rate**.
 
 ---
 
@@ -275,7 +275,7 @@ This allows users to verify the answer instead of blindly trusting the model.
 
 # Evaluation
 
-LexiQuery includes a dedicated **evaluation harness** instead of simply claiming that the RAG system is accurate.
+GroundIQ includes a dedicated **evaluation harness** instead of simply claiming that the RAG system is accurate.
 
 The evaluation set contains:
 
@@ -311,7 +311,7 @@ These results are from the included labelled evaluation set.
 
 # Retrieval Ablation
 
-LexiQuery also measures whether each component actually improves the system.
+GroundIQ also measures whether each component actually improves the system.
 
 ### Keyword-style questions
 
@@ -331,7 +331,7 @@ LexiQuery also measures whether each component actually improves the system.
 
 An important result is that **BM25 actually performs better on the keyword-style dataset**.
 
-LexiQuery does not hide this result.
+GroundIQ does not hide this result.
 
 Instead, the paraphrase evaluation demonstrates the specific situation where hybrid retrieval provides value.
 
@@ -348,51 +348,51 @@ This makes the evaluation an actual engineering experiment rather than a collect
                          └────────┬────────┘
                                   │
                                   ▼
-                    ┌────────────────────────┐
-                    │ Structure-Aware        │
-                    │ Chunking               │
-                    │                        │
-                    │ Sections → paragraphs  │
-                    │ → sentences + overlap │
-                    └───────────┬────────────┘
-                                │
-                  ┌─────────────┴──────────────┐
-                  │                            │
-                  ▼                            ▼
-          ┌──────────────┐              ┌──────────────┐
-          │     BM25     │              │  Embeddings  │
-          │              │              │              │
-          │ Implemented  │              │ TF-IDF + SVD │
-          │ from scratch │              │ or hosted    │
-          └──────┬───────┘              └──────┬───────┘
-                 │                             │
-                 └──────────────┬──────────────┘
-                                ▼
-                    ┌────────────────────────┐
-                    │ Reciprocal Rank Fusion │
-                    └───────────┬────────────┘
-                                ▼
-                    ┌────────────────────────┐
-                    │ Explainable Reranker   │
-                    │                        │
-                    │ coverage               │
-                    │ proximity              │
-                    │ phrase                 │
-                    │ heading                │
-                    │ density                │
-                    └───────────┬────────────┘
-                                ▼
-                    ┌────────────────────────┐
-                    │ Grounding Guardrail    │
-                    └───────────┬────────────┘
-                                │
-                     ┌──────────┴──────────┐
-                     ▼                     ▼
-              ┌─────────────┐       ┌────────────┐
-              │   Answer    │       │  Refusal   │
-              │ + citations │       │ "I don't  │
-              │ + confidence│       │   know"   │
-              └─────────────┘       └────────────┘
+                     ┌────────────────────────┐
+                     │ Structure-Aware        │
+                     │ Chunking               │
+                     │                        │
+                     │ Sections → paragraphs  │
+                     │ → sentences + overlap │
+                     └───────────┬────────────┘
+                                 │
+                   ┌─────────────┴──────────────┐
+                   │                            │
+                   ▼                            ▼
+           ┌──────────────┐              ┌──────────────┐
+           │     BM25     │              │  Embeddings  │
+           │              │              │              │
+           │ Implemented  │              │ TF-IDF + SVD │
+           │ from scratch │              │ or hosted    │
+           └──────┬───────┘              └──────┬───────┘
+                  │                             │
+                  └──────────────┬──────────────┘
+                                 ▼
+                     ┌────────────────────────┐
+                     │ Reciprocal Rank Fusion │
+                     └───────────┬────────────┘
+                                 ▼
+                     ┌────────────────────────┐
+                     │ Explainable Reranker   │
+                     │                        │
+                     │ coverage               │
+                     │ proximity              │
+                     │ phrase                 │
+                     │ heading                │
+                     │ density                │
+                     └───────────┬────────────┘
+                                 ▼
+                     ┌────────────────────────┐
+                     │ Grounding Guardrail    │
+                     └───────────┬────────────┘
+                                 │
+                          ┌──────┴──────┐
+                          ▼             ▼
+                   ┌─────────────┐ ┌────────────┐
+                   │   Answer    │ │  Refusal   │
+                   │ + citations │ │ "I don't  │
+                   │ + confidence│ │   know"   │
+                   └─────────────┘ └────────────┘
 ```
 
 ---
@@ -413,7 +413,7 @@ Using both makes the system robust to different types of questions.
 
 BM25 and vector similarity produce scores on completely different scales.
 
-Rather than trying to normalize those scores, LexiQuery combines their **rank positions** using Reciprocal Rank Fusion.
+Rather than trying to normalize those scores, GroundIQ combines their **rank positions** using Reciprocal Rank Fusion.
 
 ---
 
@@ -429,7 +429,7 @@ Important explanation
 
 from each other.
 
-LexiQuery preserves the document's heading hierarchy and uses sentence overlap so that retrieved chunks retain enough context to be useful and citeable.
+GroundIQ preserves the document's heading hierarchy and uses sentence overlap so that retrieved chunks retain enough context to be useful and citeable.
 
 ---
 
@@ -445,7 +445,7 @@ For example:
 
 Inventing a policy could cause a real operational or compliance problem.
 
-LexiQuery therefore treats **insufficient evidence as a reason not to answer**.
+GroundIQ therefore treats **insufficient evidence as a reason not to answer**.
 
 ---
 
@@ -489,27 +489,27 @@ Hosted LLM providers can be enabled when desired.
 # Project Structure
 
 ```text
-lexiquery/
-├── lexiquery/
+groundiq/
+├── groundiq/
 │   ├── text.py
 │   ├── chunking.py
-│   │
+│
 │   ├── index/
 │   │   ├── bm25.py
 │   │   ├── embeddings.py
 │   │   └── vector.py
-│   │
+│
 │   ├── retrieval/
 │   │   ├── hybrid.py
 │   │   └── rerank.py
-│   │
+│
 │   ├── generation/
 │   │   └── answerers.py
-│   │
+│
 │   ├── evaluation/
 │   │   ├── metrics.py
 │   │   └── harness.py
-│   │
+│
 │   ├── pipeline.py
 │   ├── api.py
 │   └── cli.py
@@ -533,8 +533,8 @@ lexiquery/
 ## 1. Clone the repository
 
 ```bash
-git clone https://github.com/iamtanmaybaranwal/LexiQuery.git
-cd LexiQuery
+git clone https://github.com/iamtanmaybaranwal/GroundIQ.git
+cd GroundIQ
 ```
 
 ## 2. Create a virtual environment
@@ -568,7 +568,7 @@ No API key is required for the default offline configuration.
 # Ask a Question
 
 ```bash
-python -m lexiquery.cli ask \
+python -m groundiq.cli ask \
   "what does RDS-4471 mean and how do I fix it"
 ```
 
@@ -593,7 +593,7 @@ provider extractive
 # Test the Refusal Guardrail
 
 ```bash
-python -m lexiquery.cli ask \
+python -m groundiq.cli ask \
   "what is the capital of France"
 ```
 
@@ -614,7 +614,7 @@ refused True
 # Run the Evaluation
 
 ```bash
-python -m lexiquery.cli evaluate
+python -m groundiq.cli evaluate
 ```
 
 ---
@@ -622,7 +622,7 @@ python -m lexiquery.cli evaluate
 # Run the Ablation Study
 
 ```bash
-python -m lexiquery.cli ablation
+python -m groundiq.cli ablation
 ```
 
 This compares:
@@ -640,7 +640,7 @@ and reports retrieval metrics for each strategy.
 # Run the API
 
 ```bash
-uvicorn lexiquery.api:app --factory --port 8000
+uvicorn groundiq.api:app --factory --port 8000
 ```
 
 API documentation:
@@ -710,7 +710,7 @@ Run the complete test suite:
 python -m pytest -q
 ```
 
-LexiQuery currently contains **35 tests** covering:
+GroundIQ currently contains **35 tests** covering:
 
 * Text processing
 * Structure-aware chunking
@@ -734,7 +734,7 @@ The project also contains **quality gates** that fail CI when retrieval quality 
 
 # What This Project Demonstrates
 
-LexiQuery was designed to demonstrate that building a useful RAG system involves much more than connecting an LLM to a vector database.
+GroundIQ was designed to demonstrate that building a useful RAG system involves much more than connecting an LLM to a vector database.
 
 ### Information Retrieval
 
@@ -772,7 +772,7 @@ LexiQuery was designed to demonstrate that building a useful RAG system involves
 
 # Honest Evaluation
 
-One of the goals of LexiQuery is to make RAG evaluation transparent.
+One of the goals of GroundIQ is to make RAG evaluation transparent.
 
 The included experiments show that:
 
@@ -805,3 +805,4 @@ The system is therefore designed around a simple principle:
 # License
 
 MIT
+
